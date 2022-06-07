@@ -26,7 +26,10 @@ def moving_average(x, w):
     import numpy as np
     return np.convolve(x, np.ones(w), 'valid') / w
 
-def data_preparation():
+def data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data', 
+                     meteo_dir='CATS',meteo_tag='meteo_cats_*.csv',
+                     gdimm_dir='GDIMM_tmp',gdimm_tag='new_r0Alt_2*.csv',
+                     pml_dir='PBL_tmp',pml_tag='new_Cn2_2*.csv'):
     import pandas as pd
     import numpy as np
     from astropy.time import Time
@@ -40,18 +43,18 @@ def data_preparation():
     import matplotlib.dates as mdates
     
     #Names of the MASS and Meteo files
-    meteo_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/CATS/'
-    meteo_tag = 'meteo_cats_*.csv'
-    gdimm_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/GDIMM_tmp/'
-    gdimm_tag = 'new_r0Alt_2*.csv'
-    pml_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/PBL_tmp/'
-    pml_tag   = 'new_Cn2_2*.csv'
+    # meteo_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/CATS/'
+    # meteo_tag = 'meteo_cats_*.csv'
+    # gdimm_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/GDIMM_tmp/'
+    # gdimm_tag = 'new_r0Alt_2*.csv'
+    # pml_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/PBL_tmp/'
+    # pml_tag   = 'new_Cn2_2*.csv'
 
-    GDIMM_files = sorted(glob.glob(gdimm_dir+'/'+gdimm_tag))
+    GDIMM_files = sorted(glob.glob(data_dir+'/'+gdimm_dir+'/'+gdimm_tag))
     nGDIMM = len(GDIMM_files)
-    PML_files = sorted(glob.glob(pml_dir+'/'+pml_tag))
+    PML_files = sorted(glob.glob(data_dir+'/'+pml_dir+'/'+pml_tag))
     nPML = len(PML_files)
-    METEO_files = np.array(glob.glob(meteo_dir+'/'+meteo_tag))
+    METEO_files = np.array(glob.glob(data_dir+'/'+meteo_dir+'/'+meteo_tag))
     filetest = np.array(['-'.join(item.split('_')[-1].split('.')[0].split('-')[::-1]) for item in METEO_files])
     idx = np.argsort(filetest)
     METEO_files = [item for item in METEO_files[idx]]
@@ -76,6 +79,7 @@ def data_preparation():
     index_gdimm_to_remove = gdimmtmp.columns.drop(['Seeing', 'Date', 'Isop', 'Tau0'])
     gdimmtmp = gdimmtmp.drop(columns=index_gdimm_to_remove)
   
+    print ('Read PML files')
     ipml = 0
     for file in PML_files:
         count = len(open(file).readlines(  ))
@@ -208,11 +212,11 @@ def data_preparation():
     data['Date'] = date_set
     data['year'] = date_set.ymdhms.year
     data['day'] = np.array([int(date_set.yday[i].split(':')[1])/366. for i in np.arange(len(date_set.yday))])
-    data['cday'] = np.cos(data['day']*2*Pi)
-    data['sday'] = np.sin(data['day']*2*Pi)
+    data['cday'] = np.cos(data['day']*2*np.pi)
+    data['sday'] = np.sin(data['day']*2*np.pi)
     data['hour'] = (date_set.ymdhms.hour+date_set.ymdhms.minute/60+date_set.ymdhms.second/60./60.)/24.
-    data['chour'] = np.cos(data['hour']*2*Pi)
-    data['shour'] = np.sin(data['hour']*2*Pi)
+    data['chour'] = np.cos(data['hour']*2*np.pi)
+    data['shour'] = np.sin(data['hour']*2*np.pi)
 
     #index where date corresponds to a real measurements
     idx_resamp = np.flatnonzero(np.isin(date_set.jd, date_resamp))
@@ -302,6 +306,9 @@ def data_preparation():
                 ytmptau0 = np.append(ytmptau0, data[key][i+nval2h:i+2*nval2h])
                 if i+3*nval2h <= len(data['Date']): 
                     ytmp2tau0 = np.append(ytmp2tau0, data[key][i+2*nval2h:i+3*nval2h])
+
+        if (i==0):
+            print(xtmp.shape)
                  
         xtraining.append(xtmp)
         ytraining.append(ytmp)
@@ -328,18 +335,164 @@ def data_preparation():
     ytest = np.array(ytest)
     ytestisop = np.array(ytestisop)
     ytesttau0 = np.array(ytesttau0)
-    
-    bins = np.arange(date_set.isot[0],date_set.isot[-1], dtype='datetime64[M]')
-    bins = np.append(bins, [bins[-1]+1,bins[-1]+2])
-    idx = np.isnan(data['Seeing'])
-    fig, hist = plt.subplots(1,1)
-    mpl_data = mdates.date2num(date_set.datetime[~idx])
-    mpl_bins = mdates.date2num(bins)
-    hist.hist(mpl_data, bins=mpl_bins, edgecolor = 'black')
-    hist.xaxis.set_major_locator(mdates.MonthLocator(bymonth=[1,7]))
-    hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%Y'))
-    plt.xticks(rotation=45)
-    plt.ylabel('Number of measurements')
-    plt.show()
+
+    # bins = np.arange(date_set.isot[0],date_set.isot[-1], dtype='datetime64[M]')
+    # bins = np.append(bins, [bins[-1]+1,bins[-1]+2])
+    # idx = np.isnan(data['Seeing'])
+    # fig, hist = plt.subplots(1,1)
+    # mpl_data = mdates.date2num(date_set.datetime[~idx])
+    # mpl_bins = mdates.date2num(bins)
+    # hist.hist(mpl_data, bins=mpl_bins, edgecolor = 'black')
+    # hist.xaxis.set_major_locator(mdates.MonthLocator(bymonth=[1,7]))
+    # hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%Y'))
+    # plt.xticks(rotation=45)
+    # plt.ylabel('Number of measurements')
+    # plt.show()
     
     return xtraining, ytraining, xtest, ytest, xkey, ykey, ytrainingisop, ytestisop, ytrainingtau0, ytesttau0
+
+
+
+def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data', 
+                     meteo_dir='CATS',meteo_tag='meteo_cats_*.csv',
+                     gdimm_dir='GDIMM_tmp',gdimm_tag='new_r0Alt_2*.csv',
+                     pml_dir='PBL_tmp',pml_tag='new_Cn2_2*.csv'):
+
+    import pandas as pd
+    import numpy as np
+    from astropy.time import Time
+    from scipy.interpolate import interp1d
+#    import matplotlib.pyplot as plt
+    import math
+    import copy
+    import glob
+    import subprocess
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    
+    #Names of the MASS and Meteo files
+    # meteo_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/CATS/'
+    # meteo_tag = 'meteo_cats_*.csv'
+    # gdimm_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/GDIMM_tmp/'
+    # gdimm_tag = 'new_r0Alt_2*.csv'
+    # pml_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data/PBL_tmp/'
+    # pml_tag   = 'new_Cn2_2*.csv'
+
+    GDIMM_files = sorted(glob.glob(data_dir+'/'+gdimm_dir+'/'+gdimm_tag))
+    nGDIMM = len(GDIMM_files)
+    PML_files = sorted(glob.glob(data_dir+'/'+pml_dir+'/'+pml_tag))
+    nPML = len(PML_files)
+    METEO_files = np.array(glob.glob(data_dir+'/'+meteo_dir+'/'+meteo_tag))
+    filetest = np.array(['-'.join(item.split('_')[-1].split('.')[0].split('-')[::-1]) for item in METEO_files])
+    idx = np.argsort(filetest)
+    METEO_files = [item for item in METEO_files[idx]]
+    nMETEO = len(METEO_files)
+        
+    #Read CSV files (MASS and Meteo) by using pandas package
+    print('Read CSV files')
+ 
+    print('Read GDIMM files')
+    idimm = 0
+    for file in GDIMM_files:
+        count = len(open(file).readlines(  ))
+        if count > 23:
+            print('GDIMM: ', idimm,'/',nGDIMM)
+            if idimm == 0:
+                gdimmtmp = pd.read_csv(file,header=20,parse_dates={'Datetmp':['Date','Time_UT']})
+            else:
+                gdimmtmp = gdimmtmp.append(pd.read_csv(file,header=20,parse_dates={'Datetmp':['Date','Time_UT']}))
+            idimm += 1
+    gdimmtmp = gdimmtmp.rename(columns={"Datetmp": "Date", "Tau0(ms)": "Tau0"})
+    gdimmtmp.insert(16, 'Seeing', 0.5*(gdimmtmp['epsT']+gdimmtmp['epsL']))
+    index_gdimm_to_remove = gdimmtmp.columns.drop(['Seeing', 'Date', 'Isop', 'Tau0'])
+    gdimmtmp = gdimmtmp.drop(columns=index_gdimm_to_remove)
+  
+    print ('Read PML files')
+    ipml = 0
+    for file in PML_files:
+        count = len(open(file).readlines(  ))
+        if count > 23:
+            print('PML: ', ipml,'/',nPML)
+            if ipml == 0:
+                header = pd.read_csv(file, delimiter=';')
+                dh_pml = ([s for s in header[header.columns[0]] if "thickness" in s][0]).split(',')
+                h_pml = ([s for s in header[header.columns[0]] if "thickness" in s][0]).split(',')
+                while('' in dh_pml): dh_pml.remove('')
+                while('' in h_pml): h_pml.remove('')
+                dh_pml = dh_pml[1:]
+                dh_pml = np.array([int(x) for x in dh_pml])
+                h_pml = h_pml[1:]
+                h_pml = np.array([int(x) for x in h_pml])
+                iheader = [i for i in range(len(header[header.columns[0]])) if 'Date' in header[header.columns[0]][i]][0]+1
+                pmltmp = pd.read_csv(file,header=iheader,parse_dates={'Datetmp':['Date','Time_UT']})
+            else:
+                header = pd.read_csv(file, delimiter=';')
+                iheader = [i for i in range(len(header[header.columns[0]])) if 'Date' in header[header.columns[0]][i]][0]+1
+                pmltmp = pmltmp.append(pd.read_csv(file,header=iheader,parse_dates={'Datetmp':['Date','Time_UT']}))
+            ipml += 1
+    pmltmp = pmltmp.rename(columns={"Datetmp": "Date", "Tau0(ms)": "Tau0", "Seeing[arcsec]": "Seeing", "Isop[arcsec]": "Isop"})
+    # index_pml_to_remove = pmltmp.columns.drop(['Seeing', 'Date', 'Isop', 'Cn2_ground'])
+    index_pml_to_remove = pmltmp.columns.drop(['Date', 'Seeing', 'Cn2_ground', 'Cn2_150', 'Cn2_250'])
+    pmltmp = pmltmp.drop(columns=index_pml_to_remove)
+
+    print('Read meteo files')
+    imeteo = 0
+    for file in METEO_files:
+        #print(file)
+        count = len(open(file).readlines(  ))
+        if count > 4:
+            print('Meteo: ',imeteo,'/',nMETEO)
+            if imeteo == 0:
+                meteotmp = pd.read_csv(file,header=1,parse_dates={'Date':['YYYY/MM/JJ',' hh:mn:sec(HL)']})
+            else:
+                meteotmp = meteotmp.append(pd.read_csv(file,header=1,parse_dates={'Date':['YYYY/MM/JJ',' hh:mn:sec(HL)']}))
+            imeteo += 1
+        
+    meteotmp = meteotmp.rename(str.strip,axis='columns')   
+    meteotmp = meteotmp.rename(columns={"outTemp": "Temperature", "outHumidity": "Humidity"})
+    index_meteo_to_remove = meteotmp.columns.drop(['Date', 'pressure', 'Temperature', 'Humidity', 'windSpeed', 'windDir'])
+    meteotmp = meteotmp.drop(columns=index_meteo_to_remove)
+    
+    #Put pandas output in dictionaries    
+    label_gdimm = gdimmtmp.columns
+    label_pml = pmltmp.columns
+    label_meteo = meteotmp.columns
+
+    gdimm = {}
+    pml = {}
+    meteo = {}
+    
+    for key in label_gdimm:
+        gdimm[key] = gdimmtmp[key].to_numpy()
+        if gdimm[key].dtype == 'float64':
+            gdimm[key][np.where(gdimm[key] < -1000.)] = np.nan
+    for key in label_pml:
+        pml[key] = pmltmp[key].to_numpy()
+        if pml[key].dtype == 'float64':
+            print(key, len(pml[key][np.where(pml[key] < -1000.)]))
+            pml[key][np.where(pml[key] < -1000.)] = np.nan
+    for key in label_meteo:
+        meteo[key] = meteotmp[key].to_numpy()
+        if meteo[key].dtype == 'float64':
+            print(key, len(meteo[key][np.where(meteo[key] < -1000.)]))
+            meteo[key][np.where(meteo[key] < -1000.)] = np.nan
+
+    
+    #Filtering seeing values higher than 3 arcsec and replace it by an average over closest seeing
+    test = np.copy(gdimm['Seeing'])
+    idx_seeing = np.flatnonzero(test > 3.)
+    test[idx_seeing] = 0.5*(test[idx_seeing-1]+test[idx_seeing+1])
+    
+    for i in idx_seeing:
+        test[i] = (sum(test[i-6:i+7])-test[i])/12
+    gdimm['Seeing'] = test
+
+    #Add date and time in an exploitable format in dictionaries
+    print('Compute dates')
+    gdimm['Date']  = Time(gdimm['Date'].astype('datetime64'))
+    pml['Date']  = Time(pml['Date'].astype('datetime64'))
+    meteo['Date']  = Time(meteo['Date'].astype('datetime64'))
+    
+
+    return gdimm, pml, meteo
+
