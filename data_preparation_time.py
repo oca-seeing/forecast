@@ -453,19 +453,19 @@ def prepare_learning_sets(dataframe,input_sequence_length_min=60,
     scalers = {}
     for col in train_df.columns:
         scaler = MinMaxScaler(feature_range=(-1,1))
-        ss = scaler.fit_transform(train_df[i].values.reshape((-1,1)))
+        ss = scaler.fit_transform(train_df[col].values.reshape((-1,1)))
         ss = ss.reshape(len(ss)) # Get rid of extra dim
-        train_df[col] = ss
+        train_df.loc[:,col] = ss
         train_df.rename(columns={col:"scaled_%s"%col},inplace=True)
         # Now process the corresponding column from the test dataframe
-        ss = scaler.transform(test_df[i].values.reshape((-1,1)))
+        ss = scaler.transform(test_df[col].values.reshape((-1,1)))
         ss = ss.reshape(len(ss))
-        test_df[col] = ss
+        test_df.loc[:,col] = ss
         test_df.rename(columns={col:"scaled_%s"%col},inplace=True)
 
     # Now chunk the sets
-    n_input_sequence = input_sequence_length_min/sampling_rate_min
-    n_output_sequence = output_sequence_length_min/sampling_rate_min
+    n_input_sequence = input_sequence_length_min//sampling_rate_min
+    n_output_sequence = output_sequence_length_min//sampling_rate_min
     x_train, y_train = split_series(train_df.values,n_input_sequence,n_output_sequence)
     x_test,  y_test  = split_series(test_df.values, n_input_sequence,n_output_sequence)
     return (x_train,y_train,x_test,y_test)
