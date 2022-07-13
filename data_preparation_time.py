@@ -417,22 +417,25 @@ def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/C
     # Now do some merging of data. First outer join of pml and gdimm, and take (nan)mean of seing values as final seeing value
     # This will allow to have seeing measurements during days and nights. It's ok because overlapping measurements are broadly compatible
 
-    gdimm_pml = pd.merge(pml_data,gdimm_data,left_index=True,right_index=True,how='outer',suffixes=['_pml','_gdimm'])
-    seeing_gdimm = gdimm_pml['Seeing_gdimm'].values
-    seeing_pml   = gdimm_pml['Seeing_pml'].values
-    seeing = np.nanmean(np.vstack((seeing_gdimm,seeing_pml)),axis=0)
-    gdimm_pml['Seeing']=seeing
-    # Get rid of per instrument seeing measurements, just keep mean seeing value
-    gdimm_pml.drop(columns=['Seeing_gdimm','Seeing_pml'])
+    if not day_only:
+
+        gdimm_pml = pd.merge(pml_data,gdimm_data,left_index=True,right_index=True,how='outer',suffixes=['_pml','_gdimm'])
+        seeing_gdimm = gdimm_pml['Seeing_gdimm'].values
+        seeing_pml   = gdimm_pml['Seeing_pml'].values
+        seeing = np.nanmean(np.vstack((seeing_gdimm,seeing_pml)),axis=0)
+        gdimm_pml['Seeing']=seeing
+        # Get rid of per instrument seeing measurements, just keep mean seeing value
+        gdimm_pml.drop(columns=['Seeing_gdimm','Seeing_pml'])
+        to_merge = gdimm_pml
+    else:
+        to_merge = pml # Do not include night only gdimm data
 
     # Now (inner) merge with meteo data
-    final = pd.merge(meteo_data,gdimm_pml,left_index=True,right_index=True)
+    final = pd.merge(meteo_data,to_merge,left_index=True,right_index=True)
     # OK, some final filtering
     final[final.values<0]=np.nan
     final.Seeing[final.Seeing.values>5]=np.nan
     # Now check if we have the day_only filter
-    if (day_only):
-        final = final[(final.index.hour>6) & (final.index.hour<20)]
     # Drop some columns
     final.drop(columns=['Cn2_ground','Cn2_150','Cn2_250','Seeing_pml','Seeing_gdimm','Isop','Tau0'],inplace=True)
     # Add group index, based on time jumps bigger than 300s (this needs to be in sync with sampling_rate !!)
@@ -441,7 +444,7 @@ def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/C
 
 def prepare_learning_sets(dataframe,input_sequence_length_min=60,
                           output_sequence_length_min=30,test_size=0.2,
-                          sampling_rate_min=5):
+                          sampling_rate_min=5, return_df=False):
 
     '''
     This routine first splits the dataframe into training and testing, scales all columns, and finally arrange the
@@ -449,7 +452,7 @@ def prepare_learning_sets(dataframe,input_sequence_length_min=60,
     of time series of input_sequence_length_min minutes and corresponding target time series of 
     output_sequence_length_min minutes. 
     '''
-    train_df, test_df = train_test_split(dataframe,test_size=test_size)
+    train_df, test_df = train_test_split(dataframe,test_size=test_size,shuffle=False)
     scalers = {}
     for col in train_df.columns:
         scaler = MinMaxScaler(feature_range=(-1,1))
@@ -463,12 +466,19 @@ def prepare_learning_sets(dataframe,input_sequence_length_min=60,
         test_df.loc[:,col] = ss
         test_df.rename(columns={col:"scaled_%s"%col},inplace=True)
 
+    # Fill missing values
+    train_df = fill_missing_values(train_df)
+    test_df  = fill_missing_values(test_df)
+    
     # Now chunk the sets
     n_input_sequence = input_sequence_length_min//sampling_rate_min
     n_output_sequence = output_sequence_length_min//sampling_rate_min
     x_train, y_train = split_series(train_df.values,n_input_sequence,n_output_sequence)
     x_test,  y_test  = split_series(test_df.values, n_input_sequence,n_output_sequence)
-    return (x_train,y_train,x_test,y_test)
+    if (return_df):
+        return train_df, test_df
+    else:
+        return (x_train,y_train,x_test,y_test)
 
 # Routine to prepare training samples from single contiguous dataframe
 def split_series(series, n_past, n_future):
