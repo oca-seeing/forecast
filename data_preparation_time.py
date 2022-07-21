@@ -428,7 +428,7 @@ def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/C
         gdimm_pml.drop(columns=['Seeing_gdimm','Seeing_pml'])
         to_merge = gdimm_pml
     else:
-        to_merge = pml # Do not include night only gdimm data
+        to_merge = pml_data # Do not include night only gdimm data
 
     # Now (inner) merge with meteo data
     final = pd.merge(meteo_data,to_merge,left_index=True,right_index=True)
@@ -437,14 +437,20 @@ def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/C
     final.Seeing[final.Seeing.values>5]=np.nan
     # Now check if we have the day_only filter
     # Drop some columns
-    final.drop(columns=['Cn2_ground','Cn2_150','Cn2_250','Seeing_pml','Seeing_gdimm','Isop','Tau0'],inplace=True)
+    if not day_only:
+        final.drop(columns=['Cn2_ground','Cn2_150','Cn2_250','Isop','Tau0'],inplace=True)
+    else:
+        final.drop(columns=['Cn2_ground','Cn2_150','Cn2_250'],inplace=True)
+
     # Add group index, based on time jumps bigger than 300s (this needs to be in sync with sampling_rate !!)
     final['groups'] = (final.index.to_series().diff().dt.seconds > 300).cumsum()
     return final
 
 def prepare_learning_sets(dataframe,input_sequence_length_min=60,
                           output_sequence_length_min=30,test_size=0.2,
-                          sampling_rate_min=5, return_df=False):
+                          sampling_rate_min=5, 
+                          out_column='Temperature',
+                          return_scaler = True):
 
     '''
     This routine first splits the dataframe into training and testing, scales all columns, and finally arrange the
@@ -452,41 +458,73 @@ def prepare_learning_sets(dataframe,input_sequence_length_min=60,
     of time series of input_sequence_length_min minutes and corresponding target time series of 
     output_sequence_length_min minutes. 
     '''
-    train_df, test_df = train_test_split(dataframe,test_size=test_size,shuffle=False)
-    scalers = {}
-    for col in train_df.columns:
-        scaler = MinMaxScaler(feature_range=(-1,1))
-        ss = scaler.fit_transform(train_df[col].values.reshape((-1,1)))
-        ss = ss.reshape(len(ss)) # Get rid of extra dim
-        train_df.loc[:,col] = ss
-        train_df.rename(columns={col:"scaled_%s"%col},inplace=True)
-        # Now process the corresponding column from the test dataframe
-        ss = scaler.transform(test_df[col].values.reshape((-1,1)))
-        ss = ss.reshape(len(ss))
-        test_df.loc[:,col] = ss
-        test_df.rename(columns={col:"scaled_%s"%col},inplace=True)
-
-    # Fill missing values
-    train_df = fill_missing_values(train_df)
-    test_df  = fill_missing_values(test_df)
-    
-    # Now chunk the sets
     n_input_sequence = input_sequence_length_min//sampling_rate_min
     n_output_sequence = output_sequence_length_min//sampling_rate_min
-    x_train, y_train = split_series(train_df.values,n_input_sequence,n_output_sequence)
-    x_test,  y_test  = split_series(test_df.values, n_input_sequence,n_output_sequence)
-    if (return_df):
-        return train_df, test_df
+    n_full_sequence  = n_input_sequence+n_output_sequence
+    n_features = dataframe.shape[1]
+    X_train = np.empty((0,n_input_sequence,n_features))
+    X_test = np.empty((0,n_input_sequence,n_features))
+    Y_train = np.empty((0,n_output_sequence,1))
+    Y_test = np.empty((0,n_output_sequence,1))
+    out_column_index = dataframe.columns.get_loc(out_column)
+
+    for group in np.unique(dataframe['groups']):
+        current = dataframe[dataframe.groups==group]
+
+        # Split and check that current dataframes have enough samples
+        train_df, test_df = train_test_split(current,test_size=test_size,shuffle=False)
+        if (train_df.shape[0] < n_full_sequence or test_df.shape[0] < n_full_sequence):
+            continue
+
+        
+        for col in train_df.columns:
+            scaler = MinMaxScaler(feature_range=(-1,1))
+            ss = scaler.fit_transform(train_df[col].values.reshape((-1,1)))
+            ss = ss.reshape(len(ss)) # Get rid of extra dim
+            train_df.loc[:,col] = ss
+            train_df.rename(columns={col:"scaled_%s"%col},inplace=True)
+            if col==out_column:
+                out_scaler = scaler
+            # Now process the corresponding column from the test dataframe
+            ss = scaler.transform(test_df[col].values.reshape((-1,1)))
+            ss = ss.reshape(len(ss))
+            test_df.loc[:,col] = ss
+            test_df.rename(columns={col:"scaled_%s"%col},inplace=True)
+
+        # scaler = MinMaxScaler(feature_range=(-1,1))
+        # train_df[train_df.columns] = scaler.fit_transform(train_df)
+        # test_df[test_df.columns] = scaler.fit_transform(test_df)
+        # for col in train_df.columns:
+        #     train_df.rename(columns={col:"scaled_%s"%col},inplace=True)
+        # for col in test_df.columns:
+        #     test_df.rename(columns={col:"scaled_%s"%col},inplace=True)
+
+
+        # Fill missing values
+        train_df = fill_missing_values(train_df)
+        test_df  = fill_missing_values(test_df)
+
+        # Now chunk the sets
+        x_train, y_train = split_series(train_df.values,n_input_sequence,n_output_sequence,out_column_index=out_column_index)
+        x_test,  y_test  = split_series(test_df.values, n_input_sequence,n_output_sequence,out_column_index=out_column_index)
+
+        X_train = np.append(X_train,x_train,axis=0)
+        Y_train = np.append(Y_train,y_train,axis=0)
+        X_test  = np.append(X_test,x_test,axis=0)
+        Y_test  = np.append(Y_test,y_test,axis=0)
+    if (return_scaler):
+        return(X_train,Y_train,X_test,Y_test,out_scaler)
     else:
-        return (x_train,y_train,x_test,y_test)
+        return (X_train,Y_train,X_test,Y_test)
 
 # Routine to prepare training samples from single contiguous dataframe
-def split_series(series, n_past, n_future):
+def split_series(series, n_past, n_future, out_column_index=5):
     #
     # n_past ==> no of past observations
     #
     # n_future ==> no of future observations 
     #
+    out_column_index
     X, y = list(), list()
     for window_start in range(len(series)):
         past_end = window_start + n_past
@@ -494,21 +532,25 @@ def split_series(series, n_past, n_future):
         if future_end > len(series):
             break
         # slicing the past and future parts of the window
-        past, future = series[window_start:past_end, :], series[past_end:future_end, :]
+        past, future = series[window_start:past_end, :], series[past_end:future_end, [out_column_index]]
         X.append(past)
         y.append(future)
     return np.array(X), np.array(y)  
 
 
 # Routine to fill missing values with random values from data distribution
-def fill_missing_values(dataframe):
-    columns = dataframe.columns
-    for col in columns:
-        mean = dataframe[col].mean()
-        std  = dataframe[col].std() 
-        mask_nans = dataframe[col].isnull().values
-        randoms = np.random.standard_normal(mask_nans.sum())*std + mean
-        dataframe.loc[mask_nans,col]=randoms
+def fill_missing_values(dataframe,random=False):
+
+    if (random):
+        columns = dataframe.columns
+        for col in columns:
+            mean = dataframe[col].mean()
+            std  = dataframe[col].std() 
+            mask_nans = dataframe[col].isnull().values
+            randoms = np.random.standard_normal(mask_nans.sum())*std + mean
+            dataframe.loc[mask_nans,col]=randoms
+    else:
+        dataframe.interpolate(method='spline',order=3,inplace=True)
     return(dataframe)
 
 
