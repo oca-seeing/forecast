@@ -389,8 +389,11 @@ def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/C
 
     framelist=[]
     for file in GDIMM_files:
+        print("Processing file %s"%file)
         df = read_single_gdimm_file(file)
-        df = df.resample(sampling_rate_str).mean()
+        if (len(df)==0):
+            continue
+        df = df.resample(sampling_rate_str).bfill()
         if (interpolate):
             df.interpolate('spline',order=1,inplace=True)
         framelist.append (df)
@@ -398,8 +401,11 @@ def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/C
 
     framelist=[]
     for file in PML_files:
+        print("Processing file %s"%file)
         df = read_single_pml_file(file)
-        df = df.resample(sampling_rate_str).mean()
+        if (len(df)==0):
+            continue
+        df = df.resample(sampling_rate_str).bfill()
         if (interpolate):
             df.interpolate('spline',order=1,inplace=True)
         framelist.append(df)
@@ -407,8 +413,11 @@ def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/C
 
     framelist = []
     for file in METEO_files:
+        print("Processing file %s"%file)
         df = read_single_meteo_file(file)
-        df = df.resample(sampling_rate_str).mean()
+        if (len(df)==0):
+            continue
+        df = df.resample(sampling_rate_str).bfill()
         if (interpolate):
             df.interpolate('spline',order=1,inplace=True)
         framelist.append(df)
