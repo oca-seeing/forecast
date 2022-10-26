@@ -366,7 +366,52 @@ def data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_M
     
     return xtraining, ytraining, xtest, ytest, xkey, ykey, ytrainingisop, ytestisop, ytrainingtau0, ytesttau0
 
+def simple_data_preparation_meteo(data_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data', 
+                     meteo_dir='CATS',meteo_tag='meteo_cats_*.csv',
+                     sampling_rate_min=5,interpolate=True):
+    
 
+    sampling_rate_str = '%dmin'%sampling_rate_min
+
+   
+    METEO_files = np.array(glob.glob(data_dir+'/'+meteo_dir+'/'+meteo_tag))
+    filetest = np.array(['-'.join(item.split('_')[-1].split('.')[0].split('-')[::-1]) for item in METEO_files])
+    idx = np.argsort(filetest)
+    METEO_files = [item for item in METEO_files[idx]]
+    nMETEO = len(METEO_files)
+
+
+    framelist = []
+    for file in METEO_files:
+        print("Processing file %s"%file)
+        df = read_single_meteo_file(file)
+        if (df.empty):
+            continue
+        df = df.resample(sampling_rate_str).bfill()
+        if (interpolate):
+            df.interpolate('spline',order=1,inplace=True)
+        framelist.append(df)
+    meteo_data = pd.concat(framelist)
+    
+    
+    # Add group index, based on time jumps bigger than 300s (this needs to be in sync with sampling_rate !!)
+    meteo_data['groups'] = (meteo_data.index.to_series().diff().dt.seconds > 300).cumsum()
+
+    #take time into consideration
+    meteo_data['Date'] = meteo_data.index
+    Date_time = meteo_data['Date']
+    timestamp_s = Date_time.map(pd.Timestamp.timestamp)
+
+    day = 24*60*60
+    year = (365.2425)*day
+
+    meteo_data['Day sin'] = np.sin(timestamp_s * (2 * np.pi / day))
+    meteo_data['Day cos'] = np.cos(timestamp_s * (2 * np.pi / day))
+    meteo_data['Year sin'] = np.sin(timestamp_s * (2 * np.pi / year))
+    meteo_data['Year cos'] = np.cos(timestamp_s * (2 * np.pi / year))
+
+    meteo_data = meteo_data.drop(['Date'], axis=1)
+    return meteo_data
 
 def simple_data_preparation(data_dir = '/Users/cgiordano/Documents/Travail/WRF/Calern_ML/Data', 
                      meteo_dir='CATS',meteo_tag='meteo_cats_*.csv',
@@ -586,18 +631,44 @@ def get_date_from_gdimm_file(filename):
 
 
 def read_single_meteo_file(filename,keep=['Date', 'pressure', 'Temperature', 'Humidity', 'windSpeed', 'windDir'],set_index=True):
-    df = pd.read_csv(filename, header=1, parse_dates={'Date':['YYYY/MM/JJ',' hh:mn:sec(HL)']})
-    # Remove spaces in column names
-    df.rename(str.strip,axis='columns',inplace=True)
-    # Rename some columns
-    df.rename(columns={"outTemp": "Temperature", "outHumidity": "Humidity"},inplace=True)
-    if (keep != 'all'):
-        columns=keep
-        index_to_remove = df.columns.drop(keep)
-        df = df.drop(columns=index_to_remove)
-    if (set_index):
-        # Use Date as index
-        df.set_index('Date',inplace=True)
+    
+    count = len(open(filename).readlines(  ))
+    if count > 4:
+        df = pd.read_csv(filename, header=1, parse_dates={'Date':['YYYY/MM/JJ',' hh:mn:sec(HL)']})
+        # Remove spaces in column names
+        df.rename(str.strip,axis='columns',inplace=True)
+        # Rename some columns
+        df.rename(columns={"outTemp": "Temperature", "outHumidity": "Humidity"},inplace=True)
+        if (keep != 'all'):
+            columns=keep
+            index_to_remove = df.columns.drop(keep)
+            df = df.drop(columns=index_to_remove)
+        if (set_index):
+            # Use Date as index
+            df.set_index('Date',inplace=True)
+            
+        
+        df['windSpeed'] = df['windSpeed']/(3.6)  #km/h to m/s
+       
+        
+                        
+        # replace no valid value with nan for wind direction
+        df['windDir'][df['windDir']==-9999] = np.nan
+        #tonan(df['windDir'])
+        #tonan(p_cats)
+        #tonan(temp_cats)
+        #tonan(hu_cats)
+        
+        
+        # extract the index of nan value from wind direction
+        df.loc[pd.isna(df["windDir"]), :].index
+        
+        # replace alsa nan for same index in windspeed (cz by default they are replaced with 0)
+        #df.loc[df.loc[pd.isna(df["windDir"]), :].index,'windSpeed'] = np.nan
+        
+        df['windDir'][df['windDir'] > 300] = df['windDir'][df['windDir'] > 300] - 360       
+    else:
+        df = pd.DataFrame()
     return (df)
 
 def read_single_pml_file(filename,keep=['Date', 'Seeing', 'Cn2_ground', 'Cn2_150', 'Cn2_250'],set_index=True):
@@ -622,11 +693,10 @@ def read_single_gdimm_file(filename,keep=['Seeing', 'Date', 'Isop', 'Tau0'],set_
         df.set_index('Date',inplace=True)
     return (df)
 
+    
+
 
 # Read all files for a given instrument, resample and concatenate
-
-
-
 
 # This routine 
 def get_coincident_dates(gdimm_files,pml_files,meteo_files):
